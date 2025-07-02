@@ -1,0 +1,236 @@
+# === أوامر التثبيت المباشر ===
+
+# 1. تحديث النظام
+sudo apt update -y && sudo apt upgrade -y
+
+# 2. تثبيت المتطلبات
+sudo apt install -y wget curl git unzip python3 python3-pip python3-venv postgresql postgresql-contrib nginx ffmpeg build-essential pkg-config
+
+# 3. إنشاء مجلد المشروع
+cd /home/eg2
+sudo rm -rf ai-translator 2>/dev/null
+wget -O ai-translator.zip https://github.com/AbdelmonemAwad/ai-translator/archive/refs/heads/main.zip
+unzip ai-translator.zip
+mv ai-translator-main ai-translator
+rm ai-translator.zip
+cd ai-translator
+
+# 4. إعداد Python
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install flask flask-sqlalchemy gunicorn psycopg2-binary requests psutil pynvml email-validator werkzeug sendgrid
+
+# 5. إعداد قاعدة البيانات
+sudo -u postgres createuser -s ai_translator 2>/dev/null || true
+sudo -u postgres createdb ai_translator 2>/dev/null || true
+sudo -u postgres psql -c "ALTER USER ai_translator WITH PASSWORD 'ai_translator_pass2024';"
+
+# 6. إعداد متغيرات البيئة
+cat > .env << EOF
+DATABASE_URL=postgresql://ai_translator:ai_translator_pass2024@localhost/ai_translator
+PGHOST=localhost
+PGPORT=5432
+PGUSER=ai_translator
+PGPASSWORD=ai_translator_pass2024
+PGDATABASE=ai_translator
+SESSION_SECRET=$(openssl rand -hex 32)
+FLASK_APP=main.py
+FLASK_ENV=production
+EOF
+
+# 7. تشغيل إعداد قاعدة البيانات
+source .env
+python3 database_setup.py
+
+# 8. إضافة إصلاح التبويبات
+mkdir -p static/js
+cat > static/js/final-tabs-fix.js << 'EOF'
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🔧 Final tabs fix loading...');
+    
+    setTimeout(initializeTabs, 500);
+    
+    function initializeTabs() {
+        const categorySelect = document.getElementById('category-select');
+        const subcategorySelect = document.getElementById('subcategory-select');
+        
+        if (!categorySelect || !subcategorySelect) {
+            console.error('❌ Tab controls not found');
+            return;
+        }
+        
+        const categoryMapping = {
+            'general': [
+                { id: 'DEFAULT', name: 'الإعدادات الأساسية / Basic Settings' }
+            ],
+            'ai': [
+                { id: 'WHISPER', name: 'إعدادات Whisper' },
+                { id: 'OLLAMA', name: 'إعدادات Ollama' },
+                { id: 'API', name: 'إعدادات API / API Settings' }
+            ],
+            'media': [
+                { id: 'PLEX', name: 'Plex Media Server' },
+                { id: 'JELLYFIN', name: 'Jellyfin Media Server' },
+                { id: 'RADARR', name: 'Radarr (أفلام / Movies)' },
+                { id: 'SONARR', name: 'Sonarr (مسلسلات / TV Shows)' }
+            ],
+            'system': [
+                { id: 'PATHS', name: 'مسارات الملفات / File Paths' },
+                { id: 'SERVER', name: 'إعدادات الخادم / Server Settings' }
+            ]
+        };
+        
+        function hideAllTabs() {
+            document.querySelectorAll('.tab-content, [id^="tab-"]').forEach(tab => {
+                tab.classList.add('hidden');
+                tab.style.display = 'none';
+            });
+        }
+        
+        function showTabContent(sectionId) {
+            console.log('👁️ Showing content for section:', sectionId);
+            hideAllTabs();
+            
+            const targetTab = document.getElementById('tab-' + sectionId);
+            if (targetTab) {
+                targetTab.classList.remove('hidden');
+                targetTab.style.display = 'block';
+                targetTab.style.visibility = 'visible';
+                console.log('✅ Successfully showed:', sectionId);
+                return true;
+            }
+            return false;
+        }
+        
+        function populateSubcategories(categoryKey) {
+            subcategorySelect.innerHTML = '<option value="">اختر القسم الفرعي / Choose Subcategory</option>';
+            
+            const sections = categoryMapping[categoryKey] || [];
+            sections.forEach(section => {
+                const targetTab = document.getElementById('tab-' + section.id);
+                if (targetTab) {
+                    const option = document.createElement('option');
+                    option.value = section.id;
+                    option.textContent = section.name;
+                    subcategorySelect.appendChild(option);
+                }
+            });
+            
+            subcategorySelect.disabled = false;
+            
+            if (sections.length > 0) {
+                const firstAvailable = sections.find(section => 
+                    document.getElementById('tab-' + section.id)
+                );
+                if (firstAvailable) {
+                    subcategorySelect.value = firstAvailable.id;
+                    showTabContent(firstAvailable.id);
+                }
+            }
+        }
+        
+        categorySelect.addEventListener('change', function() {
+            populateSubcategories(this.value);
+        });
+        
+        subcategorySelect.addEventListener('change', function() {
+            if (this.value) {
+                showTabContent(this.value);
+            }
+        });
+        
+        window.switchCategory = () => categorySelect.dispatchEvent(new Event('change'));
+        window.switchTab = () => subcategorySelect.dispatchEvent(new Event('change'));
+        
+        if (categorySelect.value) {
+            populateSubcategories(categorySelect.value);
+        } else {
+            categorySelect.value = 'general';
+            populateSubcategories('general');
+        }
+        
+        console.log('✅ Final tabs fix initialized successfully');
+    }
+});
+EOF
+
+# 9. تحديث layout.html
+if [[ -f "templates/layout.html" ]]; then
+    if ! grep -q "final-tabs-fix.js" templates/layout.html; then
+        sed -i 's|</body>|    <script src="{{ url_for('\''static'\'', filename='\''js/final-tabs-fix.js'\'') }}"></script>\n</body>|' templates/layout.html
+        echo "✅ تم تحديث layout.html"
+    fi
+fi
+
+# 10. إعداد خدمة systemd
+sudo tee /etc/systemd/system/ai-translator.service > /dev/null << 'SERVICE_EOF'
+[Unit]
+Description=AI Translator Service
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=eg2
+WorkingDirectory=/home/eg2/ai-translator
+Environment=PATH=/home/eg2/ai-translator/venv/bin
+EnvironmentFile=/home/eg2/ai-translator/.env
+ExecStart=/home/eg2/ai-translator/venv/bin/gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 300 main:app
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+SERVICE_EOF
+
+# 11. إعداد Nginx
+sudo tee /etc/nginx/sites-available/ai-translator > /dev/null << 'NGINX_EOF'
+server {
+    listen 80;
+    server_name _;
+    
+    client_max_body_size 2G;
+    
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+    
+    location /static/ {
+        alias /home/eg2/ai-translator/static/;
+        expires 30d;
+    }
+}
+NGINX_EOF
+
+sudo ln -sf /etc/nginx/sites-available/ai-translator /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# 12. تحديث الصلاحيات وبدء الخدمات
+sudo chown -R eg2:eg2 /home/eg2/ai-translator
+sudo systemctl daemon-reload
+sudo systemctl enable ai-translator
+sudo systemctl restart nginx
+sudo systemctl start ai-translator
+
+# 13. فحص النتائج
+sleep 3
+echo ""
+echo "📊 حالة الخدمات:"
+echo "AI Translator: $(systemctl is-active ai-translator)"
+echo "Nginx: $(systemctl is-active nginx)"
+echo "PostgreSQL: $(systemctl is-active postgresql)"
+
+local_ip=$(hostname -I | awk '{print $1}')
+echo ""
+echo "🎉 تم التثبيت بنجاح!"
+echo "🌐 رابط التطبيق: http://$local_ip"
+echo "🌐 رابط خارجي: http://mocd01.synology.me"
+echo "🔑 المستخدم: admin"
+echo "🔑 كلمة المرور: your_strong_password"
+
+# === نهاية أوامر التثبيت ===

@@ -1,0 +1,137 @@
+# AI Translator v2.2.4 - أوامر التثبيت من GitHub
+# تشغيل هذه الأوامر بصلاحيات root على الخادم 5.31.55.179
+
+# 1. تنظيف التثبيتات السابقة
+sudo pkill -f python3
+sudo pkill -f ai-translator
+sudo systemctl stop nginx
+sudo systemctl stop postgresql
+sudo rm -rf /root/ai-translator*
+sudo rm -rf /home/eg2/ai-translator*
+sudo rm -f /etc/systemd/system/ai-translator*
+sudo systemctl daemon-reload
+
+# 2. تحديث النظام وتثبيت التبعيات
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv python3-dev
+sudo apt install -y postgresql postgresql-contrib
+sudo apt install -y nginx
+sudo apt install -y curl wget git unzip build-essential
+
+# 3. تحميل أحدث نسخة من GitHub
+cd /root
+sudo wget -O ai-translator-latest.zip "https://github.com/AbdelmonemAwad/ai-translator/archive/refs/heads/main.zip"
+sudo unzip ai-translator-latest.zip
+sudo mv ai-translator-main ai-translator
+sudo rm ai-translator-latest.zip
+cd /root/ai-translator
+
+# 4. إنشاء البيئة الافتراضية وتثبيت المكتبات
+sudo python3 -m venv venv
+sudo ./venv/bin/pip install --upgrade pip
+sudo ./venv/bin/pip install flask==3.0.0
+sudo ./venv/bin/pip install flask-sqlalchemy==3.1.1
+sudo ./venv/bin/pip install werkzeug==3.0.1
+sudo ./venv/bin/pip install psycopg2-binary==2.9.9
+sudo ./venv/bin/pip install sqlalchemy==2.0.23
+sudo ./venv/bin/pip install gunicorn==21.2.0
+sudo ./venv/bin/pip install requests==2.31.0
+sudo ./venv/bin/pip install psutil==5.9.6
+sudo ./venv/bin/pip install email-validator==2.1.0
+
+# 5. إعداد PostgreSQL
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+sudo -u postgres psql -c "DROP DATABASE IF EXISTS ai_translator;"
+sudo -u postgres psql -c "DROP USER IF EXISTS ai_translator;"
+sudo -u postgres psql -c "CREATE USER ai_translator WITH PASSWORD 'ai_translator_pass2024';"
+sudo -u postgres psql -c "CREATE DATABASE ai_translator OWNER ai_translator;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ai_translator TO ai_translator;"
+
+# 6. إنشاء ملف البيئة
+sudo tee /root/ai-translator/.env << 'EOF'
+DATABASE_URL=postgresql://ai_translator:ai_translator_pass2024@localhost/ai_translator
+FLASK_APP=main.py
+FLASK_ENV=production
+FLASK_DEBUG=False
+SECRET_KEY=ai-translator-github-2024
+SESSION_SECRET=ai-translator-session-2024
+PGHOST=localhost
+PGPORT=5432
+PGUSER=ai_translator
+PGPASSWORD=ai_translator_pass2024
+PGDATABASE=ai_translator
+EOF
+
+# 7. تهيئة قاعدة البيانات
+cd /root/ai-translator
+sudo ./venv/bin/python database_setup.py
+
+# 8. إنشاء خدمة systemd
+sudo tee /etc/systemd/system/ai-translator.service << 'EOF'
+[Unit]
+Description=AI Translator v2.2.4 - GitHub Version
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/ai-translator
+Environment=PATH=/usr/bin:/root/ai-translator/venv/bin
+Environment=PYTHONPATH=/root/ai-translator
+EnvironmentFile=/root/ai-translator/.env
+ExecStart=/root/ai-translator/venv/bin/gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 300 main:app
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 9. إعداد Nginx
+sudo tee /etc/nginx/sites-available/ai-translator << 'EOF'
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        client_max_body_size 100M;
+    }
+}
+EOF
+
+sudo ln -sf /etc/nginx/sites-available/ai-translator /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl restart nginx
+sudo systemctl enable nginx
+
+# 10. تشغيل الخدمة
+sudo systemctl daemon-reload
+sudo systemctl enable ai-translator
+sudo systemctl start ai-translator
+
+# 11. فحص الحالة
+sudo systemctl status ai-translator
+sudo systemctl status nginx
+sudo systemctl status postgresql
+
+# 12. اختبار الوصول
+curl -I http://localhost:5000/
+curl -I http://localhost/
+
+echo "تم التثبيت!"
+echo "الوصول: http://5.31.55.179"
+echo "المعلومات: admin / your_strong_password"

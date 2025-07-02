@@ -1,0 +1,36 @@
+# أوامر بسيطة لإصلاح التبويبات
+# نفذ هذه الأوامر واحد تلو الآخر من مسار root
+
+# 1. تسجيل الدخول للخادم
+ssh eg2@5.31.55.179
+# كلمة المرور: 1q1
+
+# 2. الانتقال لمستخدم root
+sudo -i
+
+# 3. الانتقال لمجلد التطبيق
+cd /root/ai-translator
+
+# 4. فحص الوضع الحالي
+systemctl status ai-translator
+
+# 5. إعادة تشغيل التطبيق
+systemctl restart ai-translator
+
+# 6. انتظار 15 ثانية
+sleep 15
+
+# 7. اختبار بسيط
+curl -c /tmp/t -d "username=admin&password=your_strong_password" http://localhost:5000/login
+curl -b /tmp/t http://localhost:5000/settings | grep -c "tab-"
+
+# 8. إذا كانت النتيجة أكبر من 5، فالتبويبات تعمل
+# إذا كانت 0 أو أقل من 5، هناك مشكلة
+
+# 9. تنظيف
+rm /tmp/t
+
+# 10. اختبار الوصول من المتصفح
+# افتح: http://5.31.55.179
+# المستخدم: admin
+# كلمة المرور: your_strong_password

@@ -1,0 +1,106 @@
+# أوامر تطبيق إصلاح التبويبات على الخادم
+
+# في مجلد /root/ai-translator شغّل هذه الأوامر:
+
+# 1. إنشاء ملف الإصلاح مباشرة
+cat > apply_tabs_fix.sh << 'EOF'
+#!/bin/bash
+
+echo "🔧 تطبيق إصلاح التبويبات..."
+
+cd /root/ai-translator
+
+# إنشاء ملف JavaScript للإصلاح
+cat > static/js/tabs-fix.js << 'JSEOF'
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Tabs fix loading...');
+    
+    function fixMainTabs() {
+        const mainNavLinks = document.querySelectorAll('.sidebar a, .nav-link, .main-nav a, [data-tab]');
+        
+        mainNavLinks.forEach(link => {
+            link.addEventListener('click', function(e) {
+                mainNavLinks.forEach(nav => nav.classList.remove('active'));
+                this.classList.add('active');
+                console.log('Main tab clicked:', this.textContent.trim());
+            });
+        });
+    }
+    
+    function fixSubTabs() {
+        const tabTriggers = document.querySelectorAll('[data-bs-toggle="tab"], [data-toggle="tab"], .nav-tabs .nav-link');
+        
+        tabTriggers.forEach(trigger => {
+            trigger.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                const target = this.getAttribute('href') || this.getAttribute('data-bs-target') || this.getAttribute('data-target');
+                
+                if (target) {
+                    const tabGroup = this.closest('.nav-tabs, .tab-nav');
+                    if (tabGroup) {
+                        const groupTabs = tabGroup.querySelectorAll('.nav-link, .tab-item');
+                        groupTabs.forEach(tab => tab.classList.remove('active'));
+                        
+                        const tabPanes = document.querySelectorAll('.tab-pane, .tab-content');
+                        tabPanes.forEach(pane => {
+                            pane.classList.remove('active', 'show');
+                            pane.style.display = 'none';
+                        });
+                    }
+                    
+                    this.classList.add('active');
+                    
+                    const targetPane = document.querySelector(target);
+                    if (targetPane) {
+                        targetPane.classList.add('active', 'show');
+                        targetPane.style.display = 'block';
+                    }
+                    
+                    console.log('Sub tab activated:', target);
+                }
+            });
+        });
+    }
+    
+    setTimeout(() => {
+        fixMainTabs();
+        fixSubTabs();
+        console.log('All tabs fixes applied');
+    }, 500);
+});
+
+window.refreshTabs = function() {
+    setTimeout(() => {
+        document.dispatchEvent(new Event('DOMContentLoaded'));
+    }, 100);
+};
+JSEOF
+
+chmod 644 static/js/tabs-fix.js
+
+# إضافة السكربت للقالب إذا لم يكن موجوداً
+if ! grep -q "tabs-fix.js" templates/layout.html; then
+    sed -i '/file-browser\.js/a\    <script src="{{ url_for('"'"'static'"'"', filename='"'"'js/tabs-fix.js'"'"') }}"></script>' templates/layout.html
+    echo "✓ تم إضافة السكربت إلى القالب"
+fi
+
+# إعادة تشغيل الخدمة
+systemctl restart ai-translator
+
+sleep 5
+
+if systemctl is-active --quiet ai-translator; then
+    echo "✅ تم تطبيق إصلاح التبويبات بنجاح"
+    echo "حدّث صفحة المتصفح لرؤية التحسينات"
+else
+    echo "❌ مشكلة في الخدمة"
+    systemctl status ai-translator --no-pager -l
+fi
+EOF
+
+# 2. إعطاء صلاحيات التنفيذ
+chmod +x apply_tabs_fix.sh
+
+# 3. تشغيل الإصلاح
+./apply_tabs_fix.sh

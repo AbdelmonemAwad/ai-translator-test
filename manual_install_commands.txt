@@ -1,0 +1,202 @@
+# أوامر التثبيت اليدوي لـ AI Translator v2.2.4
+# للتنفيذ المباشر على الخادم 5.31.55.179
+
+# ===== الاتصال بالخادم =====
+ssh eg2@5.31.55.179
+# كلمة المرور: 1q1
+
+# ===== تثبيت الأدوات الأساسية =====
+sudo apt update
+sudo apt install -y unzip wget curl git python3-pip python3-venv
+
+# ===== تحميل واستخراج المشروع =====
+cd /home/eg2
+wget -O ai-translator.zip https://github.com/AbdelmonemAwad/ai-translator/archive/refs/heads/main.zip
+unzip ai-translator.zip
+mv ai-translator-main ai-translator
+rm ai-translator.zip
+cd ai-translator
+
+# ===== إعداد Python =====
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install flask flask-sqlalchemy gunicorn requests psutil werkzeug
+
+# ===== إنشاء إصلاح التبويبات المتطور =====
+mkdir -p static/js
+
+cat > static/js/ultimate-tabs-fix.js << 'EOF'
+console.log('🚀 Ultimate Tabs Fix Loading...');
+
+document.addEventListener('DOMContentLoaded', function() {
+    let isInitialized = false;
+    
+    function initializeTabs() {
+        if (isInitialized) return;
+        
+        const categorySelect = document.getElementById('category-select');
+        const subcategorySelect = document.getElementById('subcategory-select');
+        
+        if (!categorySelect || !subcategorySelect) {
+            setTimeout(initializeTabs, 1000);
+            return;
+        }
+        
+        const mapping = {
+            'general': {
+                sections: [
+                    { id: 'DEFAULT', name: 'الإعدادات الأساسية' },
+                    { id: 'LANGUAGE', name: 'إعدادات اللغة' },
+                    { id: 'UI', name: 'إعدادات الواجهة' }
+                ]
+            },
+            'ai': {
+                sections: [
+                    { id: 'WHISPER', name: 'إعدادات Whisper' },
+                    { id: 'OLLAMA', name: 'إعدادات Ollama' },
+                    { id: 'GPU', name: 'إدارة GPU' },
+                    { id: 'API', name: 'إعدادات API' }
+                ]
+            },
+            'media': {
+                sections: [
+                    { id: 'PLEX', name: 'Plex Media Server' },
+                    { id: 'JELLYFIN', name: 'Jellyfin Media Server' },
+                    { id: 'EMBY', name: 'Emby Media Server' },
+                    { id: 'RADARR', name: 'Radarr (أفلام)' },
+                    { id: 'SONARR', name: 'Sonarr (مسلسلات)' }
+                ]
+            },
+            'system': {
+                sections: [
+                    { id: 'PATHS', name: 'مسارات الملفات' },
+                    { id: 'DATABASE', name: 'قاعدة البيانات' },
+                    { id: 'SERVER', name: 'إعدادات الخادم' }
+                ]
+            }
+        };
+        
+        function findAvailableSections() {
+            const available = [];
+            Object.values(mapping).flatMap(cat => cat.sections).forEach(section => {
+                if (document.querySelector('#tab-' + section.id)) {
+                    available.push(section.id);
+                }
+            });
+            return available;
+        }
+        
+        const availableSections = findAvailableSections();
+        
+        function hideAllTabs() {
+            document.querySelectorAll('[id^="tab-"]').forEach(tab => {
+                tab.style.display = 'none';
+                tab.classList.add('hidden');
+            });
+        }
+        
+        function showTab(sectionId) {
+            hideAllTabs();
+            const tab = document.querySelector('#tab-' + sectionId);
+            if (tab) {
+                tab.style.display = 'block';
+                tab.classList.remove('hidden');
+                setTimeout(() => tab.scrollIntoView({ behavior: 'smooth' }), 100);
+                return true;
+            }
+            return false;
+        }
+        
+        function updateSubcategories(categoryKey) {
+            subcategorySelect.innerHTML = '<option value="">اختر القسم</option>';
+            const category = mapping[categoryKey];
+            if (!category) return;
+            
+            const available = category.sections.filter(s => availableSections.includes(s.id));
+            available.forEach(section => {
+                const option = document.createElement('option');
+                option.value = section.id;
+                option.textContent = section.name;
+                subcategorySelect.appendChild(option);
+            });
+            
+            if (available.length > 0) {
+                subcategorySelect.value = available[0].id;
+                showTab(available[0].id);
+            }
+        }
+        
+        categorySelect.addEventListener('change', function() {
+            updateSubcategories(this.value);
+        });
+        
+        subcategorySelect.addEventListener('change', function() {
+            if (this.value) showTab(this.value);
+            else hideAllTabs();
+        });
+        
+        updateSubcategories(categorySelect.value || 'general');
+        
+        window.ultimateDebugTabs = function() {
+            return { availableSections, category: categorySelect.value, subcategory: subcategorySelect.value };
+        };
+        
+        window.ultimateShowSection = showTab;
+        
+        isInitialized = true;
+        console.log('✅ Ultimate Tabs System Ready!');
+    }
+    
+    setTimeout(initializeTabs, 1000);
+});
+EOF
+
+# ===== تحديث layout.html =====
+if [[ -f "templates/layout.html" ]]; then
+    sed -i 's|</body>|    <script src="{{ url_for('\''static'\'', filename='\''js/ultimate-tabs-fix.js'\'') }}"></script>\n</body>|' templates/layout.html
+    echo "✅ تم تحديث layout.html"
+fi
+
+# ===== إنشاء ملف بيئة بسيط =====
+cat > .env << 'ENV'
+FLASK_APP=main.py
+FLASK_ENV=development
+SESSION_SECRET=your-secret-key-here
+ENV
+
+# ===== تجربة تشغيل التطبيق =====
+source venv/bin/activate
+source .env
+python3 -c "
+try:
+    from app import app
+    print('✅ التطبيق يعمل بنجاح')
+    print('🌐 يمكن تشغيله بـ: python3 -m flask run --host=0.0.0.0 --port=5000')
+except Exception as e:
+    print('❌ خطأ في التطبيق:', e)
+"
+
+# ===== تشغيل التطبيق مؤقتاً للاختبار =====
+echo "تشغيل التطبيق على المنفذ 5000..."
+python3 -m flask run --host=0.0.0.0 --port=5000 &
+
+# ===== فحص الاتصال =====
+sleep 5
+curl -I http://localhost:5000/ || echo "التطبيق لا يستجيب"
+
+echo "🎉 التثبيت الأساسي مكتمل!"
+echo "🌐 الرابط: http://5.31.55.179:5000"
+echo "🔑 اسم المستخدم: admin"
+echo "🔑 كلمة المرور: your_strong_password"
+
+# ===== معلومات إضافية =====
+echo ""
+echo "💡 لإصلاح التبويبات:"
+echo "1. افتح http://5.31.55.179:5000"
+echo "2. سجل دخول واذهب للإعدادات"
+echo "3. اضغط F12 وشغل: ultimateDebugTabs()"
+echo "4. استخدم: ultimateShowSection('DEFAULT')"
+echo ""
+echo "🔧 لإيقاف التطبيق: killall python3"
+echo "🔧 لإعادة التشغيل: cd /home/eg2/ai-translator && source venv/bin/activate && python3 -m flask run --host=0.0.0.0 --port=5000"
